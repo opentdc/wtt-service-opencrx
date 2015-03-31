@@ -83,7 +83,10 @@ public class OpencrxServiceProvider implements ServiceProvider {
 	// instance variables
 	protected Logger logger = Logger.getLogger(this.getClass().getName());
 	
-	public OpencrxServiceProvider(ServletContext context) {
+	public OpencrxServiceProvider(
+		ServletContext context,
+		String prefix
+	) {
 		logger.info("> FileImpl()");
 
 		if (url == null) {
