@@ -1,9 +1,33 @@
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2015 Arbalo AG
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package org.opentdc.wtt.opencrx;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.logging.Logger;
 
 import javax.jdo.JDOHelper;
 import javax.jdo.PersistenceManager;
@@ -25,10 +49,10 @@ import org.opencrx.kernel.activity1.jmi1.NewActivityResult;
 import org.opencrx.kernel.utils.Utils;
 import org.openmdx.base.exception.ServiceException;
 import org.openmdx.base.naming.Path;
-import org.opentdc.exception.DuplicateException;
-import org.opentdc.exception.NotFoundException;
-import org.opentdc.exception.NotImplementedException;
-import org.opentdc.exception.ValidationException;
+import org.opentdc.service.exception.DuplicateException;
+import org.opentdc.service.exception.NotFoundException;
+import org.opentdc.service.exception.NotImplementedException;
+import org.opentdc.service.exception.ValidationException;
 import org.opentdc.wtt.CompanyModel;
 import org.opentdc.wtt.ProjectModel;
 import org.opentdc.wtt.ResourceModel;
@@ -36,7 +60,8 @@ import org.opentdc.wtt.ServiceProvider;
 import org.w3c.spi2.Datatypes;
 import org.w3c.spi2.Structures;
 
-public class OpencrxImpl extends ServiceProvider {
+public class OpencrxImpl implements ServiceProvider {
+	
 	public static final String XRI_ACTIVITY_SEGMENT = "xri://@openmdx*org.opencrx.kernel.activity1";
 	public static final String XRI_ACCOUNT_SEGMENT = "xri://@openmdx*org.opencrx.kernel.account1";
 	public static final short ACTIVITY_GROUP_TYPE_PROJECT = 40;
@@ -55,10 +80,11 @@ public class OpencrxImpl extends ServiceProvider {
 	private static String password = null;
 	private static String mimeType = null;
 
-
+	// instance variables
+	protected Logger logger = Logger.getLogger(this.getClass().getName());
+	
 	public OpencrxImpl(ServletContext context) {
-		logger.info("> FileImpl()");	
-		super.initStorageProvider();
+		logger.info("> FileImpl()");
 
 		if (url == null) {
 			url = context.getInitParameter("backend.url");
@@ -99,6 +125,7 @@ public class OpencrxImpl extends ServiceProvider {
 		logger.info("listCompanies() -> " + countCompanies() + " companies");
 		List<ActivityTracker> _trackers = getCustomerProjectGroups(
 				activitySegment, null);
+		ArrayList<CompanyModel> companies = new ArrayList<CompanyModel>();
 		for (ActivityTracker _tracker : _trackers) {
 			companies.add(new CompanyModel(_tracker.refGetPath().toXRI(), _tracker
 					.getName(), _tracker.getDescription()));
