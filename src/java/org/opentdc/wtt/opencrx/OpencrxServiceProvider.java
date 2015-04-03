@@ -217,8 +217,9 @@ public class OpencrxServiceProvider implements ServiceProvider {
 
 	@Override
 	public CompanyModel updateCompany(
-			CompanyModel company) 
-					throws NotFoundException {
+		String compId,
+		CompanyModel company
+	) throws NotFoundException {
 		throw new NotImplementedException(
 				"method updateCompany() is not yet implemented for opencrx storage.");
 		// TODO implement updateCompany()
@@ -452,9 +453,10 @@ public class OpencrxServiceProvider implements ServiceProvider {
 
 	@Override
 	public ProjectModel updateProject(
-			String compId, 
-			ProjectModel project)
-					throws NotFoundException {
+			String compId,
+			String projId,
+			ProjectModel project
+	) throws NotFoundException {
 		// TODO implement updateProject for opencrx
 		throw new DuplicateException(
 				"method updateProject is not yet implemented for opencrx");
