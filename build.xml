@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<project name="opentdc-wtt-service-opencrx" default="build" basedir=".">
+<project name="opentdc-wtt-service-opencrx" basedir=".">
 
 	<property environment="env"/>
 	<property name="java.build.platform" value="jre-1.7" />
@@ -16,6 +16,7 @@
 		<fileset dir="${openmdx.home}/${java.build.platform}/core/lib" includes="*.jar" />
 		<fileset dir="${opencrx.home}/${java.build.platform}/core/lib" includes="*.jar" />
 		<fileset dir="../${java.build.platform}/services-generic/lib/" includes="*.jar" />
+		<fileset dir="../${java.build.platform}/services-opencrx/lib/" includes="*.jar" />		
 		<fileset dir="../${java.build.platform}/wtt-service/lib/" includes="*.jar" />
 		<fileset dir="../opt/google/${java.build.platform}/gson/lib/" includes="*.jar" />
 	</path>

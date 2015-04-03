@@ -31,7 +31,6 @@ import java.util.logging.Logger;
 
 import javax.jdo.JDOHelper;
 import javax.jdo.PersistenceManager;
-import javax.jdo.PersistenceManagerFactory;
 import javax.naming.NamingException;
 import javax.servlet.ServletContext;
 
@@ -48,7 +47,7 @@ import org.opencrx.kernel.activity1.jmi1.NewActivityParams;
 import org.opencrx.kernel.activity1.jmi1.NewActivityResult;
 import org.opencrx.kernel.utils.Utils;
 import org.openmdx.base.exception.ServiceException;
-import org.openmdx.base.naming.Path;
+import org.opentdc.opencrx.AbstractOpencrxServiceProvider;
 import org.opentdc.service.exception.DuplicateException;
 import org.opentdc.service.exception.NotFoundException;
 import org.opentdc.service.exception.NotImplementedException;
@@ -60,10 +59,8 @@ import org.opentdc.wtt.ServiceProvider;
 import org.w3c.spi2.Datatypes;
 import org.w3c.spi2.Structures;
 
-public class OpencrxServiceProvider implements ServiceProvider {
+public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider implements ServiceProvider {
 	
-	public static final String XRI_ACTIVITY_SEGMENT = "xri://@openmdx*org.opencrx.kernel.activity1";
-	public static final String XRI_ACCOUNT_SEGMENT = "xri://@openmdx*org.opencrx.kernel.account1";
 	public static final short ACTIVITY_GROUP_TYPE_PROJECT = 40;
 	public static final short ACCOUNT_ROLE_CUSTOMER = 100;
 	public static final short ACTIVITY_CLASS_INCIDENT = 2;
@@ -71,45 +68,14 @@ public class OpencrxServiceProvider implements ServiceProvider {
 	public static final short ICAL_CLASS_NA = 0;
 	public static final short ICAL_TYPE_VEVENT = 1;
 
-	private static PersistenceManagerFactory pmf = null;
-	private static String providerName = null;
-	private static String segmentName = null;
-	private static org.opencrx.kernel.activity1.jmi1.Segment activitySegment = null;
-	private static String url = null;
-	private static String userName = null;
-	private static String password = null;
-	private static String mimeType = null;
-
 	// instance variables
 	private static final Logger logger = Logger.getLogger(OpencrxServiceProvider.class.getName());
 	
 	public OpencrxServiceProvider(
 		ServletContext context,
 		String prefix
-	) {
-		logger.info("> FileImpl()");
-
-		if (url == null) {
-			url = context.getInitParameter("backend.url");
-		}
-		if (userName == null) {
-			userName = context.getInitParameter("backend.userName");
-		}
-		if (password == null) {
-			password = context.getInitParameter("backend.password");
-		}
-		if (mimeType == null) {
-			mimeType = context.getInitParameter("backend.mimeType");
-		}
-		if (providerName == null) {
-			providerName = context.getInitParameter("backend.providerName");
-		}
-		if (segmentName == null) {
-			segmentName = context.getInitParameter("backend.segmentName");
-		}
-		if (activitySegment == null) {
-			activitySegment = getActivitySegment(getPersistenceManager());
-		}
+	) throws ServiceException, NamingException {
+		super(context, prefix);
 	}
 
 	/******************************** company *****************************************/
@@ -120,14 +86,14 @@ public class OpencrxServiceProvider implements ServiceProvider {
 	 */
 	@Override
 	public ArrayList<CompanyModel> listCompanies(
-			boolean asTree,
-			String query, 
-			String queryType, 
-			long position, 
-			long size) {
+		boolean asTree,
+		String query, 
+		String queryType, 
+		long position, 
+		long size
+	) {
 		logger.info("listCompanies() -> " + countCompanies() + " companies");
-		List<ActivityTracker> _trackers = getCustomerProjectGroups(
-				activitySegment, null);
+		List<ActivityTracker> _trackers = getCustomerProjectGroups(null);
 		ArrayList<CompanyModel> companies = new ArrayList<CompanyModel>();
 		for (ActivityTracker _tracker : _trackers) {
 			companies.add(new CompanyModel(_tracker.refGetPath().toXRI(), _tracker
@@ -157,28 +123,13 @@ public class OpencrxServiceProvider implements ServiceProvider {
 		}
 		ActivityTracker _activityTracker = createCustomerProjectGroup(
 				company.getTitle(), company.getDescription(),
-				getMyOwnAccount());
+				null);
 		CompanyModel _newCompany = new CompanyModel(
 				_activityTracker.refGetPath().toXRI(),
 				_activityTracker.getName(),
 				_activityTracker.getDescription());
 		logger.info("createCompany() -> " + _newCompany);
 		return _newCompany;
-	}
-
-	// TODO: this is a temporary solution that only works with opencrx demo
-	// setup
-	private static Account getMyOwnAccount() {
-		PersistenceManager _pm = JDOHelper
-				.getPersistenceManager(activitySegment);
-		try {
-			return (Account) _pm
-					.getObjectById(new Path(
-							XRI_ACCOUNT_SEGMENT
-									+ "/provider/CRX/segment/Standard/account/9LOJK8ZMLRI73M3XRZJP5TDHW"));
-		} finally {
-			_pm.close();
-		}
 	}
 
 	/**
@@ -192,26 +143,19 @@ public class OpencrxServiceProvider implements ServiceProvider {
 	 */
 	@Override
 	public CompanyModel readCompany(
-			String xri) 
-					throws NotFoundException {
-		PersistenceManager _pm = JDOHelper
-				.getPersistenceManager(activitySegment);
+		String xri
+	)  throws NotFoundException {
 		CompanyModel _company = null;
-		try {
-			ActivityTracker _tracker = (ActivityTracker) _pm
-					.getObjectById(new org.openmdx.base.naming.Path(xri));
-			if (_tracker == null) {
-				throw new NotFoundException("no company with ID <" + xri
-						+ "> found.");
-			}
-			_company = new CompanyModel(
-					_tracker.refGetPath().toXRI(),
-					_tracker.getName(),
-					_tracker.getDescription());
-			logger.info("readCompany(" + xri + ") -> " + _company);
-		} finally {
-			_pm.close();
+		PersistenceManager pm = this.getPersistenceManager();
+		ActivityTracker _tracker = (ActivityTracker)pm.getObjectById(new org.openmdx.base.naming.Path(xri));
+		if (_tracker == null) {
+			throw new NotFoundException("no company with ID <" + xri + "> found.");
 		}
+		_company = new CompanyModel(
+			_tracker.refGetPath().toXRI(),
+			_tracker.getName(),
+			_tracker.getDescription());
+		logger.info("readCompany(" + xri + ") -> " + _company);
 		return _company;
 	}
 
@@ -227,18 +171,18 @@ public class OpencrxServiceProvider implements ServiceProvider {
 
 	@Override
 	public void deleteCompany(
-			String id) 
-					throws NotFoundException {
+			String id
+	) throws NotFoundException {
 		throw new NotImplementedException(
 				"method deleteCompany() is not yet implemented for opencrx storage.");
 		// TODO implement deleteCompany()
 	}
 
 	@Override
-	public int countCompanies() {
+	public int countCompanies(
+	) {
 		int _count = -1;
-		List<ActivityTracker> _trackers = 
-				getCustomerProjectGroups(activitySegment, null);
+		List<ActivityTracker> _trackers = getCustomerProjectGroups(null);
 		_count = _trackers.size();
 		logger.info("countCompanies() = " + _count);
 		return _count;
@@ -364,16 +308,16 @@ public class OpencrxServiceProvider implements ServiceProvider {
 	 * @param customerProjectGroup
 	 * @return
 	 */
-	private static Activity createCustomerProject(
-			ActivityTracker customerProjectGroup, 
-			String name,
-			String description, 
-			String detailedDescription,
-			Date scheduledStart, 
-			Date scheduledEnd, 
-			short priority) {
-		PersistenceManager pm = JDOHelper
-				.getPersistenceManager(customerProjectGroup);
+	private Activity createCustomerProject(
+		ActivityTracker customerProjectGroup, 
+		String name,
+		String description, 
+		String detailedDescription,
+		Date scheduledStart, 
+		Date scheduledEnd, 
+		short priority
+	) {
+		PersistenceManager pm = JDOHelper.getPersistenceManager(customerProjectGroup);
 		ActivityCreator customerProjectCreator = null;
 		for (ActivityCreator activityCreator : customerProjectGroup
 				.<ActivityCreator> getActivityCreator()) {
@@ -435,27 +379,23 @@ public class OpencrxServiceProvider implements ServiceProvider {
 		return _project;
 	}
 
-	private static ProjectModel getProject(
-			String xri) {
-		PersistenceManager _pm = JDOHelper
-				.getPersistenceManager(activitySegment);
-		try {
-			ActivityTracker _tracker = (ActivityTracker) _pm
-					.getObjectById(new org.openmdx.base.naming.Path(xri));
-			return new ProjectModel(
-					_tracker.refGetPath().toXRI(),
-					_tracker.getName(), 
-					_tracker.getDescription());
-		} finally {
-			_pm.close();
-		}
+	private ProjectModel getProject(
+		String xri
+	) {
+		PersistenceManager pm = this.getPersistenceManager();
+		ActivityTracker _tracker = (ActivityTracker)pm.getObjectById(new org.openmdx.base.naming.Path(xri));
+		return new ProjectModel(
+			_tracker.refGetPath().toXRI(),
+			_tracker.getName(), 
+			_tracker.getDescription()
+		);
 	}
 
 	@Override
 	public ProjectModel updateProject(
-			String compId,
-			String projId,
-			ProjectModel project
+		String compId,
+		String projId,
+		ProjectModel project
 	) throws NotFoundException {
 		// TODO implement updateProject for opencrx
 		throw new DuplicateException(
@@ -526,70 +466,29 @@ public class OpencrxServiceProvider implements ServiceProvider {
 	
 	/******************************** utility methods *****************************************/
 	/**
-	 * Get persistence manager for configured user.
-	 *
-	 * @return the PersistenceManager
-	 * @throws ServiceException
-	 * @throws NamingException
-	 */
-	public PersistenceManager getPersistenceManager() {
-
-		if (pmf == null) {
-			try {
-				pmf = org.opencrx.kernel.utils.Utils
-						.getPersistenceManagerFactoryProxy(url, userName,
-								password, mimeType);
-			} catch (NamingException e) {
-				e.printStackTrace();
-			} catch (ServiceException e) {
-				e.printStackTrace();
-			}
-		}
-		return pmf.getPersistenceManager(userName, null);
-	}
-
-	/**
-	 * Get activity segment.
-	 * 
-	 * @param pm
-	 * @return
-	 */
-	public static org.opencrx.kernel.activity1.jmi1.Segment getActivitySegment(
-			PersistenceManager pm) {
-		return (org.opencrx.kernel.activity1.jmi1.Segment) pm
-				.getObjectById(new Path(XRI_ACTIVITY_SEGMENT).getDescendant(
-						"provider", providerName, "segment", segmentName));
-	}
-
-	/**
 	 * Get customer project groups and restrict to account if specified.
 	 * 
 	 * @param activitySegment
 	 * @param account
 	 * @return
 	 */
-	private static List<ActivityTracker> getCustomerProjectGroups(
-			org.opencrx.kernel.activity1.jmi1.Segment activitySegment,
-			Account account) {
-		PersistenceManager _pm = JDOHelper
-				.getPersistenceManager(activitySegment);
-		try {
-			ActivityTrackerQuery activityTrackerQuery = (ActivityTrackerQuery) _pm
-					.newQuery(ActivityTracker.class);
-			activityTrackerQuery.forAllDisabled().isFalse();
-			activityTrackerQuery.activityGroupType().equalTo(
-					ACTIVITY_GROUP_TYPE_PROJECT);
-			activityTrackerQuery.thereExistsAssignedAccount().accountRole()
-					.equalTo(ACCOUNT_ROLE_CUSTOMER);
-			if (account != null) {
-				activityTrackerQuery.thereExistsAssignedAccount()
-						.thereExistsAccount().equalTo(account);
-			}
-			activityTrackerQuery.orderByName().ascending();
-			return activitySegment.getActivityTracker(activityTrackerQuery);
-		} finally {
-			_pm.close();
+	private List<ActivityTracker> getCustomerProjectGroups(
+		Account account
+	) {
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTrackerQuery activityTrackerQuery = (ActivityTrackerQuery)pm.newQuery(ActivityTracker.class);
+		activityTrackerQuery.forAllDisabled().isFalse();
+		activityTrackerQuery.activityGroupType().equalTo(
+				ACTIVITY_GROUP_TYPE_PROJECT);
+		activityTrackerQuery.thereExistsAssignedAccount().accountRole()
+				.equalTo(ACCOUNT_ROLE_CUSTOMER);
+		if (account != null) {
+			activityTrackerQuery.thereExistsAssignedAccount()
+					.thereExistsAccount().equalTo(account);
 		}
+		activityTrackerQuery.orderByName().ascending();
+		return activitySegment.getActivityTracker(activityTrackerQuery);
 	}
 
 	/**
@@ -599,17 +498,18 @@ public class OpencrxServiceProvider implements ServiceProvider {
 	 * @param description
 	 * @param customer
 	 */
-	private static ActivityTracker createCustomerProjectGroup(
-			String name,
-			String description, 
-			Account customer) {
+	private ActivityTracker createCustomerProjectGroup(
+		String name,
+		String description, 
+		Account customer
+	) {
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		ActivityTracker _activityTracker = null;
-		PersistenceManager _pm = JDOHelper
-				.getPersistenceManager(activitySegment);
 		try {
-			_pm.currentTransaction().begin();
+			pm.currentTransaction().begin();
 			// Activity tracker
-			_activityTracker = _pm.newInstance(ActivityTracker.class);
+			_activityTracker = pm.newInstance(ActivityTracker.class);
 			_activityTracker.setName(name);
 			_activityTracker.setDescription(description);
 			_activityTracker.setActivityGroupType(ACTIVITY_GROUP_TYPE_PROJECT);
@@ -619,15 +519,14 @@ public class OpencrxServiceProvider implements ServiceProvider {
 			// Activity creator
 			ActivityCreator _activityCreator = null;
 			{
-				ActivityTypeQuery _activityTypeQuery = (ActivityTypeQuery) _pm
-						.newQuery(ActivityType.class);
+				ActivityTypeQuery _activityTypeQuery = (ActivityTypeQuery)pm.newQuery(ActivityType.class);
 				_activityTypeQuery.name().equalTo("Incidents");
 				List<ActivityType> _activityTypes = activitySegment
 						.getActivityType(_activityTypeQuery);
 				ActivityType _incidentType = _activityTypes.isEmpty() ? null
 						: _activityTypes.iterator().next();
 
-				_activityCreator = _pm.newInstance(ActivityCreator.class);
+				_activityCreator = pm.newInstance(ActivityCreator.class);
 				_activityCreator.setName(name);
 				_activityCreator.setDescription(description);
 				_activityCreator.getActivityGroup().add(_activityTracker);
@@ -640,37 +539,32 @@ public class OpencrxServiceProvider implements ServiceProvider {
 			}
 			// Account assignment
 			{
-				AccountAssignmentActivityGroup accountAssignment = _pm
-						.newInstance(AccountAssignmentActivityGroup.class);
+				AccountAssignmentActivityGroup accountAssignment = pm.newInstance(AccountAssignmentActivityGroup.class);
 				accountAssignment.setName(customer.getFullName());
 				accountAssignment.setAccount(customer);
 				accountAssignment.setAccountRole(ACCOUNT_ROLE_CUSTOMER);
 				_activityTracker.addAssignedAccount(Utils.getUidAsString(),
 						accountAssignment);
 			}
-			_pm.currentTransaction().commit();
+			pm.currentTransaction().commit();
 		} catch (Exception e) {
 			new ServiceException(e).log();
 			try {
-				_pm.currentTransaction().rollback();
+				pm.currentTransaction().rollback();
 			} catch (Exception ignore) {
 			}
-		} finally {
-			_pm.close();
 		}
 		return _activityTracker;
 	}
 
-	private static ActivityTracker getActivityTracker(
-			String xri) {
-		PersistenceManager _pm = JDOHelper
-				.getPersistenceManager(activitySegment);
-		ActivityTracker _tracker = (ActivityTracker) _pm
-				.getObjectById(new org.openmdx.base.naming.Path(xri));
-		_pm.close();
+	private ActivityTracker getActivityTracker(
+		String xri
+	) {
+		PersistenceManager pm = this.getPersistenceManager();
+		ActivityTracker _tracker = (ActivityTracker)pm.getObjectById(new org.openmdx.base.naming.Path(xri));
 		return _tracker;
 	}
-
+	
 	/*
 	 * private treeJSON convert(flatJSON) assumption: data is sorted ascending
 	 */
