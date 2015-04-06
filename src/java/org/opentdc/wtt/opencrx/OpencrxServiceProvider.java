@@ -29,45 +29,32 @@ import java.util.Date;
 import java.util.List;
 import java.util.logging.Logger;
 
-import javax.jdo.JDOHelper;
 import javax.jdo.PersistenceManager;
 import javax.naming.NamingException;
 import javax.servlet.ServletContext;
 
-import org.opencrx.kernel.account1.jmi1.Account;
+import org.opencrx.kernel.account1.cci2.LegalEntityQuery;
+import org.opencrx.kernel.account1.jmi1.LegalEntity;
 import org.opencrx.kernel.activity1.cci2.ActivityQuery;
-import org.opencrx.kernel.activity1.cci2.ActivityTrackerQuery;
-import org.opencrx.kernel.activity1.cci2.ActivityTypeQuery;
-import org.opencrx.kernel.activity1.jmi1.AccountAssignmentActivityGroup;
+import org.opencrx.kernel.activity1.cci2.ResourceAssignmentQuery;
 import org.opencrx.kernel.activity1.jmi1.Activity;
-import org.opencrx.kernel.activity1.jmi1.ActivityCreator;
 import org.opencrx.kernel.activity1.jmi1.ActivityTracker;
-import org.opencrx.kernel.activity1.jmi1.ActivityType;
-import org.opencrx.kernel.activity1.jmi1.NewActivityParams;
-import org.opencrx.kernel.activity1.jmi1.NewActivityResult;
+import org.opencrx.kernel.activity1.jmi1.Resource;
+import org.opencrx.kernel.activity1.jmi1.ResourceAssignment;
 import org.opencrx.kernel.utils.Utils;
 import org.openmdx.base.exception.ServiceException;
 import org.opentdc.opencrx.AbstractOpencrxServiceProvider;
+import org.opentdc.opencrx.ActivitiesHelper;
 import org.opentdc.service.exception.DuplicateException;
+import org.opentdc.service.exception.InternalServerErrorException;
 import org.opentdc.service.exception.NotFoundException;
-import org.opentdc.service.exception.NotImplementedException;
-import org.opentdc.service.exception.ValidationException;
 import org.opentdc.wtt.CompanyModel;
 import org.opentdc.wtt.ProjectModel;
 import org.opentdc.wtt.ResourceModel;
 import org.opentdc.wtt.ServiceProvider;
-import org.w3c.spi2.Datatypes;
-import org.w3c.spi2.Structures;
 
 public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider implements ServiceProvider {
 	
-	public static final short ACTIVITY_GROUP_TYPE_PROJECT = 40;
-	public static final short ACCOUNT_ROLE_CUSTOMER = 100;
-	public static final short ACTIVITY_CLASS_INCIDENT = 2;
-	public static final short ICAL_TYPE_NA = 0;
-	public static final short ICAL_CLASS_NA = 0;
-	public static final short ICAL_TYPE_VEVENT = 1;
-
 	// instance variables
 	private static final Logger logger = Logger.getLogger(OpencrxServiceProvider.class.getName());
 	
@@ -78,578 +65,665 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		super(context, prefix);
 	}
 
-	/******************************** company *****************************************/
-	/**
-	 * List all companies.
-	 * 
-	 * @return a list of all companies.
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#listCompanies(boolean, java.lang.String, java.lang.String, long, long)
 	 */
 	@Override
-	public ArrayList<CompanyModel> listCompanies(
+	public List<CompanyModel> listCompanies(
 		boolean asTree,
 		String query, 
 		String queryType, 
-		long position, 
-		long size
+		int position, 
+		int size
 	) {
 		logger.info("listCompanies() -> " + countCompanies() + " companies");
-		List<ActivityTracker> _trackers = getCustomerProjectGroups(null);
-		ArrayList<CompanyModel> companies = new ArrayList<CompanyModel>();
-		for (ActivityTracker _tracker : _trackers) {
-			companies.add(new CompanyModel(_tracker.refGetPath().toXRI(), _tracker
-					.getName(), _tracker.getDescription()));
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		List<ActivityTracker> trackers = ActivitiesHelper.getCustomerProjectGroups(activitySegment, null);
+		List<CompanyModel> companies = new ArrayList<CompanyModel>();
+		for(ActivityTracker tracker : trackers) {
+			companies.add(
+				new CompanyModel(
+					tracker.refGetPath().getLastSegment().toClassicRepresentation(),
+					tracker.refGetPath().toXRI(), 
+					tracker.getName(), 
+					tracker.getDescription()
+				)
+			);
 		}
 		Collections.sort(companies, CompanyModel.CompanyComparator);
 		return companies;
 	}
 
-	/**
-	 * Create a new company.
-	 * 
-	 * @param company
-	 *            the raw company information
-	 * @return the newly created company (can be different than param company)
-	 * @throws DuplicateException
-	 *             if a company with the same ID already exists.
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#createCompany(org.opentdc.wtt.CompanyModel)
 	 */
 	@Override
 	public CompanyModel createCompany(
-			CompanyModel company) 
-					throws DuplicateException {
-		if (readCompany(company.getId()) != null) {
-			// object with same ID exists already
-			throw new DuplicateException("Company with ID " + company.getId() +
-					" exists already.");
+		CompanyModel company
+	)  throws DuplicateException {
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		org.opencrx.kernel.account1.jmi1.Segment accountSegment = this.getAccountSegment();
+		if(company.getId() != null) {
+			try {
+				readCompany(company.getId());
+				throw new DuplicateException("Company with ID " + company.getId() + " exists already.");
+			} catch(NotFoundException ignore) {}
 		}
-		ActivityTracker _activityTracker = createCustomerProjectGroup(
-				company.getTitle(), company.getDescription(),
-				null);
-		CompanyModel _newCompany = new CompanyModel(
-				_activityTracker.refGetPath().toXRI(),
-				_activityTracker.getName(),
-				_activityTracker.getDescription());
-		logger.info("createCompany() -> " + _newCompany);
-		return _newCompany;
+		LegalEntity customer = null;
+		{
+			LegalEntityQuery customerQuery = (LegalEntityQuery)pm.newQuery(LegalEntity.class);
+			customerQuery.name().equalTo(company.getTitle());
+			customerQuery.forAllDisabled().isFalse();
+			List<LegalEntity> customers = accountSegment.getAccount(customerQuery);
+			if(customers.isEmpty()) {
+				customer = pm.newInstance(LegalEntity.class);
+				customer.setName(company.getTitle());
+				try {
+					pm.currentTransaction().begin();
+					accountSegment.addAccount(
+						Utils.getUidAsString(),
+						customer
+					);
+					pm.currentTransaction().commit();
+				} catch(Exception e) {
+					new ServiceException(e).log();
+					try {
+						pm.currentTransaction().rollback();
+					} catch(Exception ignore) {}
+					throw new InternalServerErrorException(e.getMessage());
+				}
+			} else {
+				customer = customers.iterator().next();
+			}
+		}
+		ActivityTracker customerProjectGroup = ActivitiesHelper.createCustomerProjectGroup(
+			pm,
+			activitySegment,
+			company.getTitle(), 
+			company.getDescription(),
+			customer
+		);
+		if(customerProjectGroup == null) {
+			throw new InternalServerErrorException();
+		} else {
+			CompanyModel newCompany = new CompanyModel(
+				customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation(),
+				customerProjectGroup.refGetPath().toXRI(),
+				customerProjectGroup.getName(),
+				customerProjectGroup.getDescription()
+			);
+			logger.info("createCompany() -> " + newCompany);
+			return newCompany;
+		}
 	}
 
-	/**
-	 * Find a company by ID.
-	 * 
-	 * @param id
-	 *            the company ID
-	 * @return the company
-	 * @throws NotFoundException
-	 *             if there exists no company with this ID
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#readCompany(java.lang.String)
 	 */
 	@Override
 	public CompanyModel readCompany(
-		String xri
+		String id
 	)  throws NotFoundException {
-		CompanyModel _company = null;
-		PersistenceManager pm = this.getPersistenceManager();
-		ActivityTracker _tracker = (ActivityTracker)pm.getObjectById(new org.openmdx.base.naming.Path(xri));
-		if (_tracker == null) {
-			throw new NotFoundException("no company with ID <" + xri + "> found.");
+		CompanyModel company = null;
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTracker customerProjectGroup = null;
+		try {
+			customerProjectGroup = activitySegment.getActivityTracker(id);
+		} catch(Exception ignore) {}
+		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
+			throw new NotFoundException("no company with ID <" + id + "> found.");
 		}
-		_company = new CompanyModel(
-			_tracker.refGetPath().toXRI(),
-			_tracker.getName(),
-			_tracker.getDescription());
-		logger.info("readCompany(" + xri + ") -> " + _company);
-		return _company;
+		company = new CompanyModel(
+			customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation(),
+			customerProjectGroup.refGetPath().toXRI(),
+			customerProjectGroup.getName(),
+			customerProjectGroup.getDescription()
+		);
+		logger.info("readCompany(" + id + ") -> " + company);
+		return company;
 	}
 
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#updateCompany(java.lang.String, org.opentdc.wtt.CompanyModel)
+	 */
 	@Override
 	public CompanyModel updateCompany(
-		String compId,
+		String id,
 		CompanyModel company
 	) throws NotFoundException {
-		throw new NotImplementedException(
-				"method updateCompany() is not yet implemented for opencrx storage.");
-		// TODO implement updateCompany()
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTracker customerProjectGroup = null;
+		try {
+			customerProjectGroup = activitySegment.getActivityTracker(id);
+		} catch(Exception ignore) {}
+		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
+			throw new NotFoundException("no company with ID <" + id + "> found.");
+		}
+		try {
+			pm.currentTransaction().begin();
+			customerProjectGroup.setName(company.getTitle());
+			customerProjectGroup.setDescription(company.getDescription());
+			pm.currentTransaction().commit();
+		} catch(Exception e) {
+			new ServiceException(e).log();
+			try {
+				pm.currentTransaction().rollback();
+			} catch(Exception ignore) {}
+			throw new InternalServerErrorException(e.getMessage());
+		}
+		company = new CompanyModel(
+			customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation(),
+			customerProjectGroup.refGetPath().toXRI(),
+			customerProjectGroup.getName(),
+			customerProjectGroup.getDescription()
+		);
+		logger.info("updateCompany(" + id + ") -> " + company);
+		return company;
 	}
 
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#deleteCompany(java.lang.String)
+	 */
 	@Override
 	public void deleteCompany(
-			String id
+		String id
 	) throws NotFoundException {
-		throw new NotImplementedException(
-				"method deleteCompany() is not yet implemented for opencrx storage.");
-		// TODO implement deleteCompany()
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTracker customerProjectGroup = null;
+		try {
+			customerProjectGroup = activitySegment.getActivityTracker(id);
+		} catch(Exception ignore) {}
+		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
+			throw new NotFoundException("no company with ID <" + id + "> found.");
+		}
+		// Disable tracker and assigned activities
+		try {
+			pm.currentTransaction().begin();
+			customerProjectGroup.setDisabled(true);
+			List<Activity> customerProjects = ActivitiesHelper.getCustomerProjects(customerProjectGroup, false);
+			for(Activity project: customerProjects) {
+				project.setDisabled(true);
+			}
+			pm.currentTransaction().commit();
+		} catch(Exception e) {
+			new ServiceException(e).log();
+			try {
+				pm.currentTransaction().rollback();
+			} catch(Exception ignore) {}
+			throw new InternalServerErrorException(e.getMessage());
+		}
+		logger.info("deleteCompany(" + id + ")");
 	}
 
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#countCompanies()
+	 */
 	@Override
 	public int countCompanies(
 	) {
-		int _count = -1;
-		List<ActivityTracker> _trackers = getCustomerProjectGroups(null);
-		_count = _trackers.size();
-		logger.info("countCompanies() = " + _count);
-		return _count;
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		return ActivitiesHelper.getCustomerProjectGroups(
+			activitySegment, 
+			null
+		).size();
 	}
 
-	/******************************** project *****************************************/
-	/**
-	 * Return the top-level projects of a company without subprojects.
-	 * 
-	 * @param compId
-	 * @return all top-level projects of a company
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#listProjects(java.lang.String, java.lang.String, java.lang.String, int, int)
 	 */
 	@Override
-	public ArrayList<ProjectModel> listProjects(
-			String compId,
-			String query, 
-			String queryType, 
-			long position, 
-			long size) {
-		List<Activity> _activities = getCustomerProjects(getActivityTracker(compId));
-		logger.info("listProjects(" + compId + ") -> " + _activities.size()
-				+ " values");
-		ArrayList<ProjectModel> _projects = new ArrayList<ProjectModel>();
-		for (Activity _activity : _activities) {
-			_projects.add(new ProjectModel(
-					_activity.refGetPath().toXRI(), 
-					_activity.getName(), 
-					_activity.getDescription()));
-		}
-
-		return _projects;
-	}
-	
-	/**
-	 * Return all projects of a company
-	 * 
-	 * @param compId
-	 * @param asTree return the projects either as a hierarchial tree or as a flat list
-	 * @return all projects of a company
-	 */
-	@Override
-	public ArrayList<ProjectModel> listAllProjects(
-			String compId, 
-			boolean asTree,
-			String query, 
-			String queryType, 
-			long position, 
-			long size) {
-		ArrayList<ProjectModel> _projects = readCompany(compId).getProjects();
-		if (asTree == false) {
-			_projects = new ArrayList<ProjectModel>();
-			// TODO: implement listAllProjects for opencrx storage
-			// _projects = flatten(_projects, readCompany(compId).getProjects());
-		}
-		logger.info("listProjects(" + compId + ") -> " + _projects.size()
-				+ " values");
-		return _projects;
-	}
-
-
-	/**
-	 * Get customer projects for the given customer project group.
-	 * 
-	 * @param customerProjectGroup
-	 * @return
-	 */
-	private static List<Activity> getCustomerProjects(
-			ActivityTracker customerProjectGroup) {
-		PersistenceManager _pm = JDOHelper
-				.getPersistenceManager(customerProjectGroup);
-		try {
-			ActivityQuery activityQuery = (ActivityQuery) _pm
-					.newQuery(Activity.class);
-			activityQuery.forAllDisabled().isFalse();
-			activityQuery.orderByName().ascending();
-			return customerProjectGroup.getFilteredActivity(activityQuery);
-		} finally {
-			_pm.close();
-		}
-	}
-
-	@Override
-	public ProjectModel createProject(
-			String compId, 
-			ProjectModel newProject)
-					throws DuplicateException {
-		logger.info("> createProject(" + compId + ", " + newProject + ")");
-		if (getProject(newProject.getId()) != null) {
-			throw new DuplicateException("Project with ID " + newProject.getId() +
-					" exists already.");
-		}
-		ActivityTracker _activityTracker = getActivityTracker(compId);
-		// TODO: set scheduledStart, scheduledEnd, priority correctly
-		Activity _activity = createCustomerProject(
-				_activityTracker,
-				newProject.getTitle(), 
-				newProject.getDescription(), 
-				null,
-				new Date(), 
-				new Date(), 
-				(short) 0);
-		newProject.setXri(_activity.refGetPath().toXRI());
-		return newProject;
-	}
-	
-	@Override
-	public ProjectModel createProjectAsSubproject(
-			String compId, 
-			String projId, 
-			ProjectModel newProject) 
-					throws DuplicateException {
-		logger.info("> createProjectAsSubproject(" + compId +
-				", " + projId + ", " + newProject + ")");
-		// TODO: temporary solution: 
-		// subprojects are currently not supported in opencrx
-		// we need to define the [000.000.000] syntax accordingly
-		return createProject(compId, newProject);
-	}
-
-	/**
-	 * Create a customer project.
-	 * 
-	 * @param customerProjectGroup
-	 * @return
-	 */
-	private Activity createCustomerProject(
-		ActivityTracker customerProjectGroup, 
-		String name,
-		String description, 
-		String detailedDescription,
-		Date scheduledStart, 
-		Date scheduledEnd, 
-		short priority
+	public List<ProjectModel> listProjects(
+		String compId,
+		String query, 
+		String queryType, 
+		int position, 
+		int size
 	) {
-		PersistenceManager pm = JDOHelper.getPersistenceManager(customerProjectGroup);
-		ActivityCreator customerProjectCreator = null;
-		for (ActivityCreator activityCreator : customerProjectGroup
-				.<ActivityCreator> getActivityCreator()) {
-			if (activityCreator.getActivityType().getActivityClass() == ACTIVITY_CLASS_INCIDENT) {
-				customerProjectCreator = activityCreator;
-				break;
-			}
-		}
-		if (customerProjectCreator != null) {
-			try {
-				pm.currentTransaction().begin();
-				NewActivityParams newActivityParams = Structures.create(
-						NewActivityParams.class, 
-						Datatypes.member(
-								NewActivityParams.Member.name, 
-								name), 
-						Datatypes.member(
-								NewActivityParams.Member.description,
-								description), 
-						Datatypes.member(
-								NewActivityParams.Member.detailedDescription,
-								detailedDescription), 
-						Datatypes.member(
-								NewActivityParams.Member.scheduledStart,
-								scheduledStart), 
-						Datatypes.member(
-								NewActivityParams.Member.scheduledEnd,
-								scheduledEnd), 
-						Datatypes.member(
-								NewActivityParams.Member.priority, 
-								priority),
-						Datatypes.member(NewActivityParams.Member.icalType,
-								ICAL_TYPE_NA));
-				NewActivityResult newActivityResult = customerProjectCreator
-						.newActivity(newActivityParams);
-				pm.currentTransaction().commit();
-				return newActivityResult.getActivity();
-			} catch (Exception e) {
-				new ServiceException(e).log();
-				try {
-					pm.currentTransaction().rollback();
-				} catch (Exception ignore) {
-				}
-			}
-		}
-		return null;
-	}
-
-	@Override
-	public ProjectModel readProject(
-			String projId)
-					throws NotFoundException {
-		ProjectModel _project = getProject(projId);
-		if (_project == null) {
-			throw new NotFoundException("no project with ID <" + projId
-					+ "> found.");
-		}
-		logger.info("readProject(" + projId + "): " + _project);
-		return _project;
-	}
-
-	private ProjectModel getProject(
-		String xri
-	) {
-		PersistenceManager pm = this.getPersistenceManager();
-		ActivityTracker _tracker = (ActivityTracker)pm.getObjectById(new org.openmdx.base.naming.Path(xri));
-		return new ProjectModel(
-			_tracker.refGetPath().toXRI(),
-			_tracker.getName(), 
-			_tracker.getDescription()
+		return this.listAllProjects(
+			compId, 
+			true, // asTree 
+			query, 
+			queryType, 
+			position, 
+			size
 		);
 	}
 
+	protected List<ProjectModel> getSubprojects(
+		String projectId
+	) {
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		Activity project = activitySegment.getActivity(projectId);
+		ActivityQuery subprojectsQuery = (ActivityQuery)pm.newQuery(Activity.class);
+		subprojectsQuery.thereExistsActivityLinkTo().activityLinkType().equalTo(ActivitiesHelper.ACTIVITY_LINK_TYPE_IS_CHILD_OF);
+		subprojectsQuery.thereExistsActivityLinkTo().thereExistsLinkTo().equalTo(project);
+		List<Activity> subprojects = activitySegment.getActivity(subprojectsQuery);
+		List<ProjectModel> result = new ArrayList<ProjectModel>();
+		for(Activity subproject: subprojects) {
+			ProjectModel p = new ProjectModel(
+				subproject.refGetPath().getLastSegment().toClassicRepresentation(),
+				subproject.refGetPath().toXRI(), 
+				subproject.getName(), 
+				subproject.getDescription()
+			);
+			p.setProjects(
+				this.getSubprojects(p.getId())
+			);
+			result.add(p);
+		}
+		return result;
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#listAllProjects(java.lang.String, boolean, java.lang.String, java.lang.String, long, long)
+	 */
+	@Override
+	public List<ProjectModel> listAllProjects(
+		String compId, 
+		boolean asTree,
+		String query, 
+		String queryType, 
+		int position, 
+		int size
+	) {
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTracker customerProjectGroup = null;
+		try {
+			customerProjectGroup = activitySegment.getActivityTracker(compId);
+		} catch(Exception ignore) {}
+		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
+			throw new NotFoundException("no company with ID <" + compId + "> found.");
+		}
+		List<Activity> customerProjects = ActivitiesHelper.getCustomerProjects(customerProjectGroup, asTree);
+		ArrayList<ProjectModel> result = new ArrayList<ProjectModel>();
+		for (Activity customerProject: customerProjects) {
+			ProjectModel project = new ProjectModel(
+				customerProject.refGetPath().getLastSegment().toClassicRepresentation(),
+				customerProject.refGetPath().toXRI(), 
+				customerProject.getName(), 
+				customerProject.getDescription()
+			);
+			if(asTree) {
+				project.setProjects(
+					this.getSubprojects(project.getId())
+				);
+			}
+			result.add(project);
+		}
+		return result;
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#createProject(java.lang.String, org.opentdc.wtt.ProjectModel)
+	 */
+	@Override
+	public ProjectModel createProject(
+		String compId, 
+		ProjectModel newProject
+	) throws DuplicateException {
+		logger.info("> createProject(" + compId + ", " + newProject + ")");
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTracker customerProjectGroup = null;
+		try {
+			customerProjectGroup = activitySegment.getActivityTracker(compId);
+		} catch(Exception ignore) {}
+		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
+			throw new NotFoundException("no company with ID <" + compId + "> found.");
+		}
+		if(newProject.getId() != null) {
+			Activity project = null;
+			try {
+				project = activitySegment.getActivity(newProject.getId());
+			} catch(Exception ignore) {}
+			if(project != null) {
+				throw new DuplicateException("Project with ID " + newProject.getId() + " exists already.");				
+			}
+		}
+		Activity project = ActivitiesHelper.createCustomerProject(
+			pm,
+			customerProjectGroup,
+			newProject.getTitle(), 
+			newProject.getDescription(), 
+			null,
+			new Date(), 
+			new Date(),
+			ActivitiesHelper.ACTIVITY_PRIORITY_NA,
+			null
+		);
+		if(project == null) {
+			throw new InternalServerErrorException();
+		} else {
+			return new ProjectModel(				
+				project.refGetPath().getLastSegment().toClassicRepresentation(),
+				project.refGetPath().toXRI(),
+				newProject.getTitle(),
+				newProject.getDescription()
+			);
+		}
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#createProjectAsSubproject(java.lang.String, java.lang.String, org.opentdc.wtt.ProjectModel)
+	 */
+	@Override
+	public ProjectModel createProjectAsSubproject(
+		String compId, 
+		String projId, 
+		ProjectModel newProject
+	) throws DuplicateException {
+		logger.info("> createProjectAsSubproject(" + compId + ", " + newProject + ")");
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTracker customerProjectGroup = null;
+		try {
+			customerProjectGroup = activitySegment.getActivityTracker(compId);
+		} catch(Exception ignore) {}
+		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
+			throw new NotFoundException("no company with ID <" + compId + "> found.");
+		}
+		Activity parentProject = null;
+		try {
+			parentProject = activitySegment.getActivity(projId);
+		} catch(Exception ignore) {}
+		if(parentProject == null) {
+			throw new NotFoundException("Project with ID " + projId + " not found.");				
+		}
+		if(newProject.getId() != null) {
+			Activity project = null;
+			try {
+				project = activitySegment.getActivity(newProject.getId());
+			} catch(Exception ignore) {}
+			if(project != null) {
+				throw new DuplicateException("Project with ID " + newProject.getId() + " exists already.");				
+			}
+		}
+		Activity project = ActivitiesHelper.createCustomerProject(
+			pm,
+			customerProjectGroup,
+			newProject.getTitle(), 
+			newProject.getDescription(), 
+			null,
+			new Date(), 
+			new Date(), 
+			ActivitiesHelper.ACTIVITY_PRIORITY_NA,
+			parentProject
+		);
+		if(project == null) {
+			throw new InternalServerErrorException();
+		} else {
+			return new ProjectModel(				
+				project.refGetPath().getLastSegment().toClassicRepresentation(),
+				project.refGetPath().toXRI(),
+				newProject.getTitle(),
+				newProject.getDescription()
+			);
+		}
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#readProject(java.lang.String)
+	 */
+	@Override
+	public ProjectModel readProject(
+		String projId
+	) throws NotFoundException {
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
+		Activity project = null;
+		try {
+			project = activitySegment.getActivity(projId);
+		} catch(Exception ignore) {}
+		if(project == null || Boolean.TRUE.equals(project.isDisabled())) {
+			throw new NotFoundException("no project with ID <" + projId + "> found.");
+		}
+		ProjectModel p = new ProjectModel(
+			project.refGetPath().getLastSegment().toClassicRepresentation(),
+			project.refGetPath().toXRI(),
+			project.getName(),
+			project.getDescription()
+		);
+		p.setProjects(
+			this.getSubprojects(p.getId())
+		);
+		logger.info("readProject(" + projId + "): " + p);
+		return p;
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#updateProject(java.lang.String, java.lang.String, org.opentdc.wtt.ProjectModel)
+	 */
 	@Override
 	public ProjectModel updateProject(
 		String compId,
 		String projId,
-		ProjectModel project
+		ProjectModel p
 	) throws NotFoundException {
-		// TODO implement updateProject for opencrx
-		throw new DuplicateException(
-				"method updateProject is not yet implemented for opencrx");
-	}
-
-	@Override
-	public void deleteProject(
-			String compId, 
-			String projId)
-					throws NotFoundException {
-		// TODO implement deleteProject for opencrx
-		throw new DuplicateException(
-				"method deleteProject is not yet implemented for opencrx");
-	}
-
-	@Override
-	public int countProjects(
-			String compId) {
-		// TODO: replace this with size of index (= count recursively)
-		int _count = readCompany(compId).getProjects().size();
-		logger.info("countProjects(" + compId + ") -> " + _count);
-		return _count;
-	}
-	
-	/******************************** resource *****************************************/
-	@Override
-	public ArrayList<ResourceModel> listResources(
-			String projId,
-			String query, 
-			String queryType, 
-			long position, 
-			long size) 
-		throws NotFoundException {
-		// TODO implement listResources for opencrx
-		throw new DuplicateException(
-				"method listResources is not yet implemented for opencrx");		
-	}
-
-	@Override
-	public String addResource(
-			String projId, 
-			String resourceId)
-					throws NotFoundException {
-		// TODO implement addResource for opencrx
-		throw new DuplicateException(
-				"method addResource is not yet implemented for opencrx");		
-	}
-
-	@Override
-	public void removeResource(
-			String projId, 
-			String resourceId)
-					throws NotFoundException {
-		// TODO implement removeResource for opencrx
-		throw new DuplicateException(
-				"method removeResource is not yet implemented for opencrx");				
-	}
-
-	@Override
-	public int countResources(
-			String projId) 
-					throws NotFoundException {
-		// TODO implement countResources for opencrx
-		throw new DuplicateException(
-				"method countResources is not yet implemented for opencrx");		
-	}
-	
-	/******************************** utility methods *****************************************/
-	/**
-	 * Get customer project groups and restrict to account if specified.
-	 * 
-	 * @param activitySegment
-	 * @param account
-	 * @return
-	 */
-	private List<ActivityTracker> getCustomerProjectGroups(
-		Account account
-	) {
 		PersistenceManager pm = this.getPersistenceManager();
-		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
-		ActivityTrackerQuery activityTrackerQuery = (ActivityTrackerQuery)pm.newQuery(ActivityTracker.class);
-		activityTrackerQuery.forAllDisabled().isFalse();
-		activityTrackerQuery.activityGroupType().equalTo(
-				ACTIVITY_GROUP_TYPE_PROJECT);
-		activityTrackerQuery.thereExistsAssignedAccount().accountRole()
-				.equalTo(ACCOUNT_ROLE_CUSTOMER);
-		if (account != null) {
-			activityTrackerQuery.thereExistsAssignedAccount()
-					.thereExistsAccount().equalTo(account);
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
+		Activity project = null;
+		try {
+			project = activitySegment.getActivity(projId);
+		} catch(Exception ignore) {}
+		if(project == null) {
+			throw new NotFoundException("no project with ID <" + projId + "> found.");
 		}
-		activityTrackerQuery.orderByName().ascending();
-		return activitySegment.getActivityTracker(activityTrackerQuery);
-	}
-
-	/**
-	 * Create a customer project group.
-	 * 
-	 * @param name
-	 * @param description
-	 * @param customer
-	 */
-	private ActivityTracker createCustomerProjectGroup(
-		String name,
-		String description, 
-		Account customer
-	) {
-		PersistenceManager pm = this.getPersistenceManager();
-		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
-		ActivityTracker _activityTracker = null;
 		try {
 			pm.currentTransaction().begin();
-			// Activity tracker
-			_activityTracker = pm.newInstance(ActivityTracker.class);
-			_activityTracker.setName(name);
-			_activityTracker.setDescription(description);
-			_activityTracker.setActivityGroupType(ACTIVITY_GROUP_TYPE_PROJECT);
-			activitySegment.addActivityTracker(
-					org.opencrx.kernel.utils.Utils.getUidAsString(),
-					_activityTracker);
-			// Activity creator
-			ActivityCreator _activityCreator = null;
-			{
-				ActivityTypeQuery _activityTypeQuery = (ActivityTypeQuery)pm.newQuery(ActivityType.class);
-				_activityTypeQuery.name().equalTo("Incidents");
-				List<ActivityType> _activityTypes = activitySegment
-						.getActivityType(_activityTypeQuery);
-				ActivityType _incidentType = _activityTypes.isEmpty() ? null
-						: _activityTypes.iterator().next();
-
-				_activityCreator = pm.newInstance(ActivityCreator.class);
-				_activityCreator.setName(name);
-				_activityCreator.setDescription(description);
-				_activityCreator.getActivityGroup().add(_activityTracker);
-				_activityCreator.setActivityType(_incidentType);
-				_activityCreator.setIcalClass(ICAL_CLASS_NA);
-				_activityCreator.setIcalType(ICAL_TYPE_VEVENT);
-				_activityCreator.setPriority((short) 0);
-				activitySegment.addActivityCreator(Utils.getUidAsString(),
-						_activityCreator);
-			}
-			// Account assignment
-			{
-				AccountAssignmentActivityGroup accountAssignment = pm.newInstance(AccountAssignmentActivityGroup.class);
-				accountAssignment.setName(customer.getFullName());
-				accountAssignment.setAccount(customer);
-				accountAssignment.setAccountRole(ACCOUNT_ROLE_CUSTOMER);
-				_activityTracker.addAssignedAccount(Utils.getUidAsString(),
-						accountAssignment);
-			}
+			project.setName(p.getTitle());
+			project.setDescription(p.getDescription());
 			pm.currentTransaction().commit();
-		} catch (Exception e) {
+		} catch(Exception e) {
 			new ServiceException(e).log();
 			try {
 				pm.currentTransaction().rollback();
-			} catch (Exception ignore) {
-			}
+			} catch(Exception ignore) {}
 		}
-		return _activityTracker;
+		return p;
 	}
 
-	private ActivityTracker getActivityTracker(
-		String xri
+	protected void deleteSubprojects(
+		String projectId
 	) {
 		PersistenceManager pm = this.getPersistenceManager();
-		ActivityTracker _tracker = (ActivityTracker)pm.getObjectById(new org.openmdx.base.naming.Path(xri));
-		return _tracker;
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
+		List<ProjectModel> subprojects = this.getSubprojects(projectId);
+		for(ProjectModel subproject: subprojects) {
+			try {
+				pm.currentTransaction().begin();
+				Activity p = activitySegment.getActivity(subproject.getId());
+				p.setDisabled(true);
+				pm.currentTransaction().commit();
+			} catch(Exception e) {
+				new ServiceException(e).log();
+				try {
+					pm.currentTransaction().rollback();
+				} catch(Exception ignore) {}
+			}
+			this.deleteSubprojects(subproject.getId());
+		}
 	}
 	
-	/*
-	 * private treeJSON convert(flatJSON) assumption: data is sorted ascending
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#deleteProject(java.lang.String, java.lang.String)
 	 */
-	private ArrayList<ProjectModel> convertProjects(
-			ArrayList<ProjectModel> srcProjects,
-			boolean isFlat) 
-					throws ValidationException {
-		logger.info("converting data");
-
-		int oldIdx1 = -1;
-		int oldIdx2 = -1;
-		int newIdx1 = -1;
-		int newIdx2 = -1;
-		int newIdx3 = -1;
-		ProjectModel _srcProject = null;
-		ProjectModel _destProject = null;
-		ArrayList<ProjectModel> _destProjects = new ArrayList<ProjectModel>();
-		ProjectModel _lastL1Project = null;
-		ProjectModel _lastL2Project = null;
-		String _title = null;
-		for (int i = 0; i < srcProjects.size(); i++) {
-			_srcProject = srcProjects.get(i);
-			_title = _srcProject.getTitle();
-			if (_title.length() <= 14) {
-				throw new ValidationException(
-						"title is too short: <"
-								+ _title
-								+ ">. Should be at least 14 chars long with Format <[000.000.000] text>.");
-			}
-			if (_title.charAt(0) != '[' || _title.charAt(4) != '.'
-					|| _title.charAt(8) != '.' || _title.charAt(12) != ']') {
-				throw new ValidationException(
-						"title <"
-								+ _title
-								+ "> has invalid format. Should be <[000.000.000] text>.");
-			}
-			newIdx1 = new Integer(_title.substring(1, 4)).intValue();
-			newIdx2 = new Integer(_title.substring(5, 8)).intValue();
-			newIdx3 = new Integer(_title.substring(9, 12)).intValue();
-
-			_destProject = new ProjectModel(_title.substring(14), "");
-
-			if (isFlat == true) {
-				_destProjects.add(_destProject);
-			} else {
-				if (newIdx1 > oldIdx1) { // level 1 has changed
-					if (newIdx2 == 0 && newIdx3 == 0) {
-						_lastL1Project = _destProject;
-						_destProjects.add(_lastL1Project);
-						_lastL2Project = null;
-					} else {
-						_lastL1Project = new ProjectModel();
-						_destProjects.add(_lastL1Project);
-
-						if (newIdx3 == 0) {
-							_lastL2Project = _destProject;
-							_lastL1Project.addProject(_lastL2Project);
-						} else {
-							_lastL2Project = new ProjectModel();
-							_lastL1Project.addProject(_lastL2Project);
-							_lastL2Project.addProject(_destProject);
-						}
-					}
-				} else { // level1 unchanged = _lastL1Project
-					if (newIdx2 > oldIdx2) { // level 2 has changed
-						if (newIdx3 == 0) {
-							_lastL2Project = _destProject;
-							_lastL1Project.addProject(_lastL2Project);
-						} else {
-							_lastL2Project = new ProjectModel();
-							_lastL1Project.addProject(_lastL2Project);
-							_lastL2Project.addProject(_destProject);
-						}
-					} else { // level 2 unchanged = _lastL2Project
-						if (_lastL2Project == null) {
-							_lastL2Project = new ProjectModel();
-							_lastL1Project.addProject(_lastL2Project);
-						}
-						_lastL2Project.addProject(_destProject);
-					}
-				}
-			}
-			oldIdx1 = newIdx1;
-			oldIdx2 = newIdx2;
+	@Override
+	public void deleteProject(
+		String compId, 
+		String projId
+	) throws NotFoundException {
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
+		Activity project = null;
+		try {
+			project = activitySegment.getActivity(projId);
+		} catch(Exception ignore) {}
+		if(project == null || Boolean.TRUE.equals(project.isDisabled())) {
+			throw new NotFoundException("no project with ID <" + projId + "> found.");
 		}
-		return _destProjects;
+		try {
+			pm.currentTransaction().begin();
+			project.setDisabled(true);
+			pm.currentTransaction().commit();
+			this.deleteSubprojects(projId);
+		} catch(Exception e) {
+			new ServiceException(e).log();
+			try {
+				pm.currentTransaction().rollback();
+			} catch(Exception ignore) {}
+		}
 	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#countProjects(java.lang.String)
+	 */
+	@Override
+	public int countProjects(
+		String compId
+	) {
+		return this.listAllProjects(
+			compId, 
+			true, // asTree
+			null, // query
+			null, // queryType
+			0, // position
+			Integer.MAX_VALUE
+		).size();
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#listResources(java.lang.String, java.lang.String, java.lang.String, long, long)
+	 */
+	@Override
+	public List<ResourceModel> listResources(
+		String projId,
+		String query, 
+		String queryType, 
+		int position,
+		int size
+	)  throws NotFoundException {
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
+		Activity project = null;
+		try {
+			project = activitySegment.getActivity(projId);
+		} catch(Exception ignore) {}
+		if(project == null || Boolean.TRUE.equals(project.isDisabled())) {
+			throw new NotFoundException("no project with ID <" + projId + "> found.");
+		}
+		List<Resource> resources = ActivitiesHelper.getProjectResources(project);
+		List<ResourceModel> result = new ArrayList<ResourceModel>();
+		for(Resource resource: resources) {
+			result.add(
+				new ResourceModel(resource.refGetPath().getLastSegment().toClassicRepresentation())
+			);
+		}
+		return result;
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#addResource(java.lang.String, java.lang.String)
+	 */
+	@Override
+	public String addResource(
+		String projId, 
+		String resourceId
+	) throws NotFoundException {
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
+		Activity project = null;
+		try {
+			project = activitySegment.getActivity(projId);
+		} catch(Exception ignore) {}
+		if(project == null || Boolean.TRUE.equals(project.isDisabled())) {
+			throw new NotFoundException("no project with ID <" + projId + "> found.");
+		}
+		Resource resource = null;
+		try {
+			resource = activitySegment.getResource(resourceId);
+		} catch(Exception ignore) {}
+		if(resource == null || Boolean.TRUE.equals(resource.isDisabled())) {
+			throw new NotFoundException("no resource with ID <" + resourceId + "> found.");
+		}
+		try {
+			ResourceAssignment resourceAssignment = pm.newInstance(ResourceAssignment.class);
+			pm.currentTransaction().begin();
+			resourceAssignment.setName(resource.getName());
+			resourceAssignment.setResource(resource);
+			resourceAssignment.setResourceRole(ActivitiesHelper.RESOURCE_ROLE_MEMBER);
+			project.addAssignedResource(
+				Utils.getUidAsString(),
+				resourceAssignment
+			);
+			pm.currentTransaction().commit();
+		} catch(Exception e) {
+			new ServiceException(e).log();
+			try {
+				pm.currentTransaction().rollback();
+			} catch(Exception ignore) {}
+			throw new InternalServerErrorException();
+		}
+		return resourceId;
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#removeResource(java.lang.String, java.lang.String)
+	 */
+	@Override
+	public void removeResource(
+		String projId, 
+		String resourceId
+	) throws NotFoundException {
+		PersistenceManager pm = this.getPersistenceManager();
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
+		Activity project = null;
+		try {
+			project = activitySegment.getActivity(projId);
+		} catch(Exception ignore) {}
+		if(project == null || Boolean.TRUE.equals(project.isDisabled())) {
+			throw new NotFoundException("no project with ID <" + projId + "> found.");
+		}
+		Resource resource = null;
+		try {
+			resource = activitySegment.getResource(resourceId);
+		} catch(Exception ignore) {}
+		if(resource == null || Boolean.TRUE.equals(resource.isDisabled())) {
+			throw new NotFoundException("no resource with ID <" + resourceId + "> found.");
+		}
+		ResourceAssignmentQuery resourceAssignmentQuery = (ResourceAssignmentQuery)pm.newQuery(ResourceAssignment.class);
+		resourceAssignmentQuery.thereExistsResource().equalTo(resource);
+		List<ResourceAssignment> resourceAssignments = project.getAssignedResource(resourceAssignmentQuery);
+		try {
+			pm.currentTransaction().begin();
+			for(ResourceAssignment resourceAssignment: resourceAssignments) {
+				resourceAssignment.setDisabled(true);
+			}
+			pm.currentTransaction().commit();
+		} catch(Exception e) {
+			new ServiceException(e).log();
+			try {
+				pm.currentTransaction().rollback();
+			} catch(Exception ignore) {}
+			throw new InternalServerErrorException();
+		}
+	}
+
+	/* (non-Javadoc)
+	 * @see org.opentdc.wtt.ServiceProvider#countResources(java.lang.String)
+	 */
+	@Override
+	public int countResources(
+		String projId
+	) throws NotFoundException {
+		return this.listResources(
+			projId, 
+			null, // query
+			null, // queryType
+			0, // position
+			Integer.MAX_VALUE
+		).size();
+	}
+	
 }
