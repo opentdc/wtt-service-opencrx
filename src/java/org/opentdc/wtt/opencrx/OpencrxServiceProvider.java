@@ -50,7 +50,7 @@ import org.opentdc.service.exception.InternalServerErrorException;
 import org.opentdc.service.exception.NotFoundException;
 import org.opentdc.wtt.CompanyModel;
 import org.opentdc.wtt.ProjectModel;
-import org.opentdc.wtt.ResourceModel;
+import org.opentdc.wtt.ResourceRefModel;
 import org.opentdc.wtt.ServiceProvider;
 
 public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider implements ServiceProvider {
@@ -598,7 +598,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 * @see org.opentdc.wtt.ServiceProvider#listResources(java.lang.String, java.lang.String, java.lang.String, long, long)
 	 */
 	@Override
-	public List<ResourceModel> listResources(
+	public List<ResourceRefModel> listResources(
 		String projId,
 		String query, 
 		String queryType, 
@@ -614,10 +614,10 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			throw new NotFoundException("no project with ID <" + projId + "> found.");
 		}
 		List<Resource> resources = ActivitiesHelper.getProjectResources(project);
-		List<ResourceModel> result = new ArrayList<ResourceModel>();
+		List<ResourceRefModel> result = new ArrayList<ResourceRefModel>();
 		for(Resource resource: resources) {
 			result.add(
-				new ResourceModel(resource.refGetPath().getLastSegment().toClassicRepresentation())
+				new ResourceRefModel(resource.refGetPath().getLastSegment().toClassicRepresentation())
 			);
 		}
 		return result;
