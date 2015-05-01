@@ -70,7 +70,6 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public List<CompanyModel> listCompanies(
-		boolean asTree,
 		String query, 
 		String queryType, 
 		int position, 
@@ -80,15 +79,11 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		List<ActivityTracker> trackers = ActivitiesHelper.getCustomerProjectGroups(activitySegment, null);
 		List<CompanyModel> companies = new ArrayList<CompanyModel>();
+		CompanyModel _c = null;
 		for(ActivityTracker tracker : trackers) {
-			companies.add(
-				new CompanyModel(
-					tracker.refGetPath().getLastSegment().toClassicRepresentation(),
-					tracker.refGetPath().toXRI(), 
-					tracker.getName(), 
-					tracker.getDescription()
-				)
-			);
+			_c = new CompanyModel(tracker.getName(), tracker.getDescription());
+			_c.setId(tracker.refGetPath().getLastSegment().toClassicRepresentation());
+			companies.add(_c);
 		}
 		Collections.sort(companies, CompanyModel.CompanyComparator);
 		return companies;
@@ -147,14 +142,13 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		if(customerProjectGroup == null) {
 			throw new InternalServerErrorException();
 		} else {
-			CompanyModel newCompany = new CompanyModel(
-				customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation(),
-				customerProjectGroup.refGetPath().toXRI(),
+			CompanyModel _newCompany = new CompanyModel(
 				customerProjectGroup.getName(),
 				customerProjectGroup.getDescription()
 			);
-			logger.info("createCompany() -> " + newCompany);
-			return newCompany;
+			_newCompany.setId(customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation());
+			logger.info("createCompany() -> " + _newCompany);
+			return _newCompany;
 		}
 	}
 
@@ -165,7 +159,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	public CompanyModel readCompany(
 		String id
 	)  throws NotFoundException {
-		CompanyModel company = null;
+		CompanyModel _company = null;
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		ActivityTracker customerProjectGroup = null;
 		try {
@@ -174,14 +168,13 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
 			throw new NotFoundException("no company with ID <" + id + "> found.");
 		}
-		company = new CompanyModel(
-			customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation(),
-			customerProjectGroup.refGetPath().toXRI(),
+		_company = new CompanyModel(
 			customerProjectGroup.getName(),
 			customerProjectGroup.getDescription()
 		);
-		logger.info("readCompany(" + id + ") -> " + company);
-		return company;
+		_company.setId(customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation());
+		logger.info("readCompany(" + id + ") -> " + _company);
+		return _company;
 	}
 
 	/* (non-Javadoc)
@@ -214,11 +207,10 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			throw new InternalServerErrorException(e.getMessage());
 		}
 		company = new CompanyModel(
-			customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation(),
-			customerProjectGroup.refGetPath().toXRI(),
 			customerProjectGroup.getName(),
 			customerProjectGroup.getDescription()
 		);
+		company.setId(customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation());
 		logger.info("updateCompany(" + id + ") -> " + company);
 		return company;
 	}
@@ -282,14 +274,26 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		int position, 
 		int size
 	) {
-		return this.listAllProjects(
-			compId, 
-			true, // asTree 
-			query, 
-			queryType, 
-			position, 
-			size
-		);
+		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
+		ActivityTracker customerProjectGroup = null;
+		try {
+			customerProjectGroup = activitySegment.getActivityTracker(compId);
+		} catch(Exception ignore) {}
+		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
+			throw new NotFoundException("no company with ID <" + compId + "> found.");
+		}
+		List<Activity> customerProjects = ActivitiesHelper.getCustomerProjects(customerProjectGroup, true);
+		ArrayList<ProjectModel> _result = new ArrayList<ProjectModel>();
+		ProjectModel _p = null;
+		for (Activity customerProject: customerProjects) {
+			_p = new ProjectModel(
+				customerProject.getName(), 
+				customerProject.getDescription()
+			);
+			_p.setId(customerProject.refGetPath().getLastSegment().toClassicRepresentation());
+			_result.add(_p);
+		}
+		return _result;
 	}
 
 	protected List<ProjectModel> getSubprojects(
@@ -303,56 +307,14 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		subprojectsQuery.thereExistsActivityLinkTo().thereExistsLinkTo().equalTo(project);
 		List<Activity> subprojects = activitySegment.getActivity(subprojectsQuery);
 		List<ProjectModel> result = new ArrayList<ProjectModel>();
+		ProjectModel _p = null;
 		for(Activity subproject: subprojects) {
-			ProjectModel p = new ProjectModel(
-				subproject.refGetPath().getLastSegment().toClassicRepresentation(),
-				subproject.refGetPath().toXRI(), 
+			_p = new ProjectModel(
 				subproject.getName(), 
 				subproject.getDescription()
 			);
-			p.setProjects(
-				this.getSubprojects(p.getId())
-			);
-			result.add(p);
-		}
-		return result;
-	}
-
-	/* (non-Javadoc)
-	 * @see org.opentdc.wtt.ServiceProvider#listAllProjects(java.lang.String, boolean, java.lang.String, java.lang.String, long, long)
-	 */
-	@Override
-	public List<ProjectModel> listAllProjects(
-		String compId, 
-		boolean asTree,
-		String query, 
-		String queryType, 
-		int position, 
-		int size
-	) {
-		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
-		ActivityTracker customerProjectGroup = null;
-		try {
-			customerProjectGroup = activitySegment.getActivityTracker(compId);
-		} catch(Exception ignore) {}
-		if(customerProjectGroup == null || Boolean.TRUE.equals(customerProjectGroup.isDisabled())) {
-			throw new NotFoundException("no company with ID <" + compId + "> found.");
-		}
-		List<Activity> customerProjects = ActivitiesHelper.getCustomerProjects(customerProjectGroup, asTree);
-		ArrayList<ProjectModel> result = new ArrayList<ProjectModel>();
-		for (Activity customerProject: customerProjects) {
-			ProjectModel project = new ProjectModel(
-				customerProject.refGetPath().getLastSegment().toClassicRepresentation(),
-				customerProject.refGetPath().toXRI(), 
-				customerProject.getName(), 
-				customerProject.getDescription()
-			);
-			if(asTree) {
-				project.setProjects(
-					this.getSubprojects(project.getId())
-				);
-			}
-			result.add(project);
+			_p.setId(subproject.refGetPath().getLastSegment().toClassicRepresentation());
+			result.add(_p);
 		}
 		return result;
 	}
@@ -398,12 +360,12 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		if(project == null) {
 			throw new InternalServerErrorException();
 		} else {
-			return new ProjectModel(				
-				project.refGetPath().getLastSegment().toClassicRepresentation(),
-				project.refGetPath().toXRI(),
+			ProjectModel _p = new ProjectModel(
 				newProject.getTitle(),
 				newProject.getDescription()
 			);
+			_p.setId(project.refGetPath().getLastSegment().toClassicRepresentation());
+			return(_p);
 		}
 	}
 
@@ -456,12 +418,12 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		if(project == null) {
 			throw new InternalServerErrorException();
 		} else {
-			return new ProjectModel(				
-				project.refGetPath().getLastSegment().toClassicRepresentation(),
-				project.refGetPath().toXRI(),
+			ProjectModel _p = new ProjectModel(
 				newProject.getTitle(),
 				newProject.getDescription()
 			);
+			_p.setId(project.refGetPath().getLastSegment().toClassicRepresentation());
+			return _p;
 		}
 	}
 
@@ -480,17 +442,13 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		if(project == null || Boolean.TRUE.equals(project.isDisabled())) {
 			throw new NotFoundException("no project with ID <" + projId + "> found.");
 		}
-		ProjectModel p = new ProjectModel(
-			project.refGetPath().getLastSegment().toClassicRepresentation(),
-			project.refGetPath().toXRI(),
+		ProjectModel _p = new ProjectModel(
 			project.getName(),
 			project.getDescription()
 		);
-		p.setProjects(
-			this.getSubprojects(p.getId())
-		);
-		logger.info("readProject(" + projId + "): " + p);
-		return p;
+		_p.setId(project.refGetPath().getLastSegment().toClassicRepresentation());
+		logger.info("readProject(" + projId + "): " + _p);
+		return _p;
 	}
 
 	/* (non-Javadoc)
@@ -584,9 +542,8 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	public int countProjects(
 		String compId
 	) {
-		return this.listAllProjects(
+		return this.listProjects(
 			compId, 
-			true, // asTree
 			null, // query
 			null, // queryType
 			0, // position
@@ -614,13 +571,14 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			throw new NotFoundException("no project with ID <" + projId + "> found.");
 		}
 		List<Resource> resources = ActivitiesHelper.getProjectResources(project);
-		List<ResourceRefModel> result = new ArrayList<ResourceRefModel>();
+		List<ResourceRefModel> _result = new ArrayList<ResourceRefModel>();
+		ResourceRefModel _rrm = null;
 		for(Resource resource: resources) {
-			result.add(
-				new ResourceRefModel(resource.refGetPath().getLastSegment().toClassicRepresentation())
-			);
+			_rrm = new ResourceRefModel();
+			_rrm.setId(resource.refGetPath().getLastSegment().toClassicRepresentation());
+			_result.add(_rrm);
 		}
-		return result;
+		return _result;
 	}
 
 	/* (non-Javadoc)
