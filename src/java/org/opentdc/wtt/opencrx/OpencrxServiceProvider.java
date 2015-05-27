@@ -76,7 +76,6 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		int position, 
 		int size
 	) {
-		logger.info("listCompanies() -> " + countCompanies() + " companies");
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		List<ActivityTracker> trackers = ActivitiesHelper.getCustomerProjectGroups(activitySegment, null);
 		List<CompanyModel> companies = new ArrayList<CompanyModel>();
@@ -86,6 +85,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			_c.setId(tracker.refGetPath().getLastSegment().toClassicRepresentation());
 			companies.add(_c);
 		}
+		logger.info("listCompanies() -> " + companies.size() + " companies");
 		Collections.sort(companies, CompanyModel.CompanyComparator);
 		return companies;
 	}
@@ -251,19 +251,6 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		logger.info("deleteCompany(" + id + ")");
 	}
 
-	/* (non-Javadoc)
-	 * @see org.opentdc.wtt.ServiceProvider#countCompanies()
-	 */
-	@Override
-	public int countCompanies(
-	) {
-		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
-		return ActivitiesHelper.getCustomerProjectGroups(
-			activitySegment, 
-			null
-		).size();
-	}
-
 	/******************************** projects *****************************************/
 	/* (non-Javadoc)
 	 * @see org.opentdc.wtt.ServiceProvider#listProjects(java.lang.String, java.lang.String, java.lang.String, int, int)
@@ -353,6 +340,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public ProjectModel readProject(
+		String compId,
 		String projId
 	) throws NotFoundException {
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
@@ -432,22 +420,6 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 				pm.currentTransaction().rollback();
 			} catch(Exception ignore) {}
 		}
-	}
-
-	/* (non-Javadoc)
-	 * @see org.opentdc.wtt.ServiceProvider#countProjects(java.lang.String)
-	 */
-	@Override
-	public int countProjects(
-		String compId
-	) {
-		return this.listProjects(
-			compId, 
-			null, // query
-			null, // queryType
-			0, // position
-			Integer.MAX_VALUE
-		).size();
 	}
 
 	/******************************** subprojects *****************************************/
@@ -562,12 +534,6 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 				this.deleteSubproject(compId, subprojId, subproject.getId());
 			}
 		}
-		
-	@Override
-	public int countSubprojects(String compId, String projId) {
-		// TODO Auto-generated method stub
-		return 0;
-	}
 
 	/******************************** resource *****************************************/
 	/* (non-Javadoc)
@@ -575,6 +541,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public List<ResourceRefModel> listResources(
+		String compId,
 		String projId,
 		String query, 
 		String queryType, 
@@ -605,8 +572,9 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public String addResource(
+		String compId,
 		String projId, 
-		String resourceId
+		ResourceRefModel resourceRef
 	) throws NotFoundException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
@@ -619,10 +587,10 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		}
 		Resource resource = null;
 		try {
-			resource = activitySegment.getResource(resourceId);
+			resource = activitySegment.getResource(resourceRef.getId());
 		} catch(Exception ignore) {}
 		if(resource == null || Boolean.TRUE.equals(resource.isDisabled())) {
-			throw new NotFoundException("no resource with ID <" + resourceId + "> found.");
+			throw new NotFoundException("no resource with ID <" + resourceRef.getId() + "> found.");
 		}
 		try {
 			ResourceAssignment resourceAssignment = pm.newInstance(ResourceAssignment.class);
@@ -642,7 +610,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			} catch(Exception ignore) {}
 			throw new InternalServerErrorException();
 		}
-		return resourceId;
+		return resourceRef.getId();
 	}
 
 	/* (non-Javadoc)
@@ -650,6 +618,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public void removeResource(
+		String compId,
 		String projId, 
 		String resourceId
 	) throws NotFoundException {
@@ -685,21 +654,5 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			} catch(Exception ignore) {}
 			throw new InternalServerErrorException();
 		}
-	}
-
-	/* (non-Javadoc)
-	 * @see org.opentdc.wtt.ServiceProvider#countResources(java.lang.String)
-	 */
-	@Override
-	public int countResources(
-		String projId
-	) throws NotFoundException {
-		return this.listResources(
-			projId, 
-			null, // query
-			null, // queryType
-			0, // position
-			Integer.MAX_VALUE
-		).size();
 	}
 }
