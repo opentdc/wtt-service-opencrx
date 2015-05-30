@@ -45,9 +45,7 @@ import org.opencrx.kernel.utils.Utils;
 import org.openmdx.base.exception.ServiceException;
 import org.opentdc.opencrx.AbstractOpencrxServiceProvider;
 import org.opentdc.opencrx.ActivitiesHelper;
-import org.opentdc.service.exception.DuplicateException;
-import org.opentdc.service.exception.InternalServerErrorException;
-import org.opentdc.service.exception.NotFoundException;
+import org.opentdc.service.exception.*;
 import org.opentdc.wtt.CompanyModel;
 import org.opentdc.wtt.ProjectModel;
 import org.opentdc.wtt.ResourceRefModel;
@@ -96,7 +94,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	@Override
 	public CompanyModel createCompany(
 		CompanyModel company
-	)  throws DuplicateException {
+	)  throws DuplicateException, ValidationException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		org.opencrx.kernel.account1.jmi1.Segment accountSegment = this.getAccountSegment();
@@ -185,7 +183,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	public CompanyModel updateCompany(
 		String id,
 		CompanyModel company
-	) throws NotFoundException {
+	) throws NotFoundException, NotAllowedException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		ActivityTracker customerProjectGroup = null;
@@ -222,7 +220,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	@Override
 	public void deleteCompany(
 		String id
-	) throws NotFoundException {
+	) throws NotFoundException, InternalServerErrorException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		ActivityTracker customerProjectGroup = null;
@@ -292,7 +290,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	public ProjectModel createProject(
 		String compId, 
 		ProjectModel newProject
-	) throws DuplicateException {
+	) throws DuplicateException, ValidationException {
 		logger.info("> createProject(" + compId + ", " + newProject + ")");
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
@@ -368,7 +366,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		String compId,
 		String projId,
 		ProjectModel p
-	) throws NotFoundException {
+	) throws NotFoundException, NotAllowedException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
 		Activity project = null;
@@ -399,7 +397,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	public void deleteProject(
 		String compId, 
 		String projId
-	) throws NotFoundException {
+	) throws NotFoundException, InternalServerErrorException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
 		Activity project = null;
@@ -424,8 +422,13 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 
 	/******************************** subprojects *****************************************/
 	@Override
-	public List<ProjectModel> listSubprojects(String compId, String projId,
-			String query, String queryType, int position, int size) {
+	public List<ProjectModel> listSubprojects(
+			String compId, 
+			String projId,
+			String query, 
+			String queryType, 
+			int position, 
+			int size) {
 			PersistenceManager pm = this.getPersistenceManager();
 			org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 			Activity project = activitySegment.getActivity(projId);
@@ -448,8 +451,11 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 
 
 	@Override
-	public ProjectModel createSubproject(String compId, String projId,
-			ProjectModel project) throws DuplicateException {
+	public ProjectModel createSubproject(
+			String compId, 
+			String projId,
+			ProjectModel project) 
+			throws DuplicateException, ValidationException {
 		logger.info("> createProjectAsSubproject(" + compId + ", " + project + ")");
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
@@ -500,21 +506,31 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	}
 
 	@Override
-	public ProjectModel readSubproject(String compId, String projId,
-			String subprojId) throws NotFoundException {
+	public ProjectModel readSubproject(
+			String compId, 
+			String projId,
+			String subprojId) 
+			throws NotFoundException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public ProjectModel updateSubproject(String compId, String projId,
-			String subprojId, ProjectModel project) throws NotFoundException {
+	public ProjectModel updateSubproject(
+			String compId, 
+			String projId,
+			String subprojId, 
+			ProjectModel project) 
+			throws NotFoundException, NotAllowedException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public void deleteSubproject(String compId, String projId, String subprojId)
+	public void deleteSubproject(
+			String compId, 
+			String projId, 
+			String subprojId)
 			throws NotFoundException, InternalServerErrorException {
 			PersistenceManager pm = this.getPersistenceManager();
 			org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
@@ -571,11 +587,11 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 * @see org.opentdc.wtt.ServiceProvider#addResource(java.lang.String, java.lang.String)
 	 */
 	@Override
-	public String addResource(
+	public ResourceRefModel addResource(
 		String compId,
 		String projId, 
 		ResourceRefModel resourceRef
-	) throws NotFoundException {
+	) throws NotFoundException, DuplicateException, ValidationException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
 		Activity project = null;
@@ -610,7 +626,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			} catch(Exception ignore) {}
 			throw new InternalServerErrorException();
 		}
-		return resourceRef.getId();
+		return resourceRef;
 	}
 
 	/* (non-Javadoc)
@@ -621,7 +637,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		String compId,
 		String projId, 
 		String resourceId
-	) throws NotFoundException {
+	) throws NotFoundException, InternalServerErrorException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
 		Activity project = null;
