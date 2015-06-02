@@ -48,6 +48,7 @@ import org.opentdc.opencrx.ActivitiesHelper;
 import org.opentdc.service.exception.*;
 import org.opentdc.wtt.CompanyModel;
 import org.opentdc.wtt.ProjectModel;
+import org.opentdc.wtt.ProjectTreeNodeModel;
 import org.opentdc.wtt.ResourceRefModel;
 import org.opentdc.wtt.ServiceProvider;
 
@@ -247,6 +248,13 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			throw new InternalServerErrorException(e.getMessage());
 		}
 		logger.info("deleteCompany(" + id + ")");
+	}
+	
+	@Override
+	public ProjectTreeNodeModel readAsTree(String compId)
+			throws NotFoundException {
+		// TODO Auto-generated method stub
+		return null;
 	}
 
 	/******************************** projects *****************************************/
