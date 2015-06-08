@@ -184,7 +184,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	public CompanyModel updateCompany(
 		String id,
 		CompanyModel company
-	) throws NotFoundException, NotAllowedException {
+	) throws NotFoundException, ValidationException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();
 		ActivityTracker customerProjectGroup = null;
@@ -374,7 +374,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		String compId,
 		String projId,
 		ProjectModel p
-	) throws NotFoundException, NotAllowedException {
+	) throws NotFoundException, ValidationException {
 		PersistenceManager pm = this.getPersistenceManager();
 		org.opencrx.kernel.activity1.jmi1.Segment activitySegment = this.getActivitySegment();		
 		Activity project = null;
@@ -529,7 +529,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			String projId,
 			String subprojId, 
 			ProjectModel project) 
-			throws NotFoundException, NotAllowedException {
+			throws NotFoundException, ValidationException {
 		// TODO Auto-generated method stub
 		return null;
 	}
