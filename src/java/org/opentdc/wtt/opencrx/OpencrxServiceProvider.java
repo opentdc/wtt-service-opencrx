@@ -30,13 +30,15 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.logging.Logger;
 
+import javax.jdo.JDOHelper;
 import javax.jdo.PersistenceManager;
 import javax.naming.NamingException;
 import javax.servlet.ServletContext;
 
-import org.opencrx.kernel.account1.cci2.LegalEntityQuery;
 import org.opencrx.kernel.account1.jmi1.LegalEntity;
+import org.opencrx.kernel.activity1.cci2.AccountAssignmentActivityGroupQuery;
 import org.opencrx.kernel.activity1.cci2.ActivityQuery;
+import org.opencrx.kernel.activity1.jmi1.AccountAssignmentActivityGroup;
 import org.opencrx.kernel.activity1.jmi1.Activity;
 import org.opencrx.kernel.activity1.jmi1.ActivityTracker;
 import org.opencrx.kernel.activity1.jmi1.Resource;
@@ -94,16 +96,28 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 * @return
 	 */
 	protected CompanyModel mapToCompany(
-		ActivityTracker company
+		ActivityTracker customerProjectGroup
 	) {
+		PersistenceManager pm = JDOHelper.getPersistenceManager(customerProjectGroup);
 		CompanyModel companyModel = new CompanyModel();
-		companyModel.setCreatedAt(company.getCreatedAt());
-		companyModel.setCreatedBy(company.getCreatedBy().get(0));
-		companyModel.setModifiedAt(company.getModifiedAt());
-		companyModel.setModifiedBy(company.getModifiedBy().get(0));
-		companyModel.setId(company.refGetPath().getLastSegment().toClassicRepresentation());
-		companyModel.setTitle(company.getName());
-		companyModel.setDescription(company.getDescription());
+		companyModel.setCreatedAt(customerProjectGroup.getCreatedAt());
+		companyModel.setCreatedBy(customerProjectGroup.getCreatedBy().get(0));
+		companyModel.setModifiedAt(customerProjectGroup.getModifiedAt());
+		companyModel.setModifiedBy(customerProjectGroup.getModifiedBy().get(0));
+		companyModel.setId(customerProjectGroup.refGetPath().getLastSegment().toClassicRepresentation());
+		companyModel.setTitle(customerProjectGroup.getName());
+		companyModel.setDescription(customerProjectGroup.getDescription());
+		AccountAssignmentActivityGroupQuery accountAssignmenQuery = (AccountAssignmentActivityGroupQuery)pm.newQuery(AccountAssignmentActivityGroup.class);
+		accountAssignmenQuery.accountRole().equalTo(ActivitiesHelper.ACCOUNT_ROLE_CUSTOMER);
+		List<AccountAssignmentActivityGroup> assignedAccounts = customerProjectGroup.getAssignedAccount(accountAssignmenQuery);
+		if(!assignedAccounts.isEmpty()) {
+			try {
+				LegalEntity organisation = (LegalEntity)assignedAccounts.iterator().next().getAccount();
+				companyModel.setOrgId(organisation.refGetPath().getLastSegment().toClassicRepresentation());
+			} catch(Exception e) {
+				new ServiceException(e).log();
+			}
+		}
 		return companyModel;
 	}
 
@@ -180,32 +194,12 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		if(company.getTitle() == null || company.getTitle().length() == 0) {
 			throw new ValidationException("company must contain a valid title.");
 		}
-		LegalEntity customer = null;
-		{
-			LegalEntityQuery customerQuery = (LegalEntityQuery)pm.newQuery(LegalEntity.class);
-			customerQuery.name().equalTo(company.getTitle());
-			customerQuery.forAllDisabled().isFalse();
-			List<LegalEntity> customers = accountSegment.getAccount(customerQuery);
-			if(customers.isEmpty()) {
-				customer = pm.newInstance(LegalEntity.class);
-				customer.setName(company.getTitle());
-				try {
-					pm.currentTransaction().begin();
-					accountSegment.addAccount(
-						Utils.getUidAsString(),
-						customer
-					);
-					pm.currentTransaction().commit();
-				} catch(Exception e) {
-					new ServiceException(e).log();
-					try {
-						pm.currentTransaction().rollback();
-					} catch(Exception ignore) {}
-					throw new InternalServerErrorException(e.getMessage());
-				}
-			} else {
-				customer = customers.iterator().next();
-			}
+		if(company.getOrgId() == null) {
+			throw new ValidationException("company must contain a contactId.");
+		}
+		LegalEntity customer = (LegalEntity)accountSegment.getAccount(company.getOrgId());
+		if(customer == null) {
+			throw new ValidationException("company must contain a contactId.");
 		}
 		ActivityTracker customerProjectGroup = ActivitiesHelper.createCustomerProjectGroup(
 			pm,
