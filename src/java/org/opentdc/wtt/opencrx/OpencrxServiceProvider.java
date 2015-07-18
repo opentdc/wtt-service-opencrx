@@ -57,11 +57,22 @@ import org.opentdc.wtt.ProjectTreeNodeModel;
 import org.opentdc.wtt.ResourceRefModel;
 import org.opentdc.wtt.ServiceProvider;
 
+/**
+ * Wtt service for openCRX.
+ *
+ */
 public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider implements ServiceProvider {
 	
-	// instance variables
 	private static final Logger logger = Logger.getLogger(OpencrxServiceProvider.class.getName());
 	
+	/**
+	 * Constructor.
+	 * 
+	 * @param context
+	 * @param prefix
+	 * @throws ServiceException
+	 * @throws NamingException
+	 */
 	public OpencrxServiceProvider(
 		ServletContext context,
 		String prefix
