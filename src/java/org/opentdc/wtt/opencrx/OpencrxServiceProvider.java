@@ -147,9 +147,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		resourceRef.setModifiedAt(resourceAssignment.getModifiedAt());
 		resourceRef.setModifiedBy(resourceAssignment.getModifiedBy().get(0));
 		resourceRef.setId(resourceAssignment.refGetPath().getLastSegment().toClassicRepresentation());
-		String[] names = resourceAssignment.getName().split(",");
-		resourceRef.setFirstName(names.length > 1 ? names[1].trim() : "");
-		resourceRef.setLastName(names.length > 0 ? names[0].trim() : "");
+		resourceRef.setResourceName(resourceAssignment.getName());
 		resourceRef.setResourceId(
 			resourceAssignment.getResource() == null 
 				? "UNDEF"
@@ -331,7 +329,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		projectTree.setId(project.getId());
 		projectTree.setProjects(new ArrayList<ProjectTreeNodeModel>());
 		projectTree.setResources(new ArrayList<String>());
-		List<ResourceRefModel> resourceRefs = this.listResources(compId, project.getId(), null, null, 0, Integer.MAX_VALUE);
+		List<ResourceRefModel> resourceRefs = this.listResourceRefs(compId, project.getId(), null, null, 0, Integer.MAX_VALUE);
 		for(ResourceRefModel resourceRef: resourceRefs) {
 			projectTree.getResources().add(resourceRef.getId());
 		}
@@ -729,7 +727,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 * @see org.opentdc.wtt.ServiceProvider#listResources(java.lang.String, java.lang.String, java.lang.String, long, long)
 	 */
 	@Override
-	public List<ResourceRefModel> listResources(
+	public List<ResourceRefModel> listResourceRefs(
 		String compId,
 		String projId,
 		String query, 
@@ -761,7 +759,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 * @see org.opentdc.wtt.ServiceProvider#addResource(java.lang.String, java.lang.String)
 	 */
 	@Override
-	public ResourceRefModel addResource(
+	public ResourceRefModel addResourceRef(
 		String compId,
 		String projId, 
 		ResourceRefModel resourceRef
@@ -795,8 +793,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 			ResourceAssignment resourceAssignment = pm.newInstance(ResourceAssignment.class);
 			pm.currentTransaction().begin();
 			resourceAssignment.setName(
-				(resourceRef.getLastName() == null ? "" : resourceRef.getLastName()) + ", " + 
-				(resourceRef.getFirstName() == null ? "" : resourceRef.getFirstName())
+				(resourceRef.getResourceName() == null ? "" : resourceRef.getResourceName())
 			);
 			resourceAssignment.setResource(resource);
 			resourceAssignment.setResourceRole(ActivitiesHelper.RESOURCE_ROLE_MEMBER);
@@ -820,7 +817,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 * @see org.opentdc.wtt.ServiceProvider#removeResource(java.lang.String, java.lang.String)
 	 */
 	@Override
-	public void removeResource(
+	public void removeResourceRef(
 		String compId,
 		String projId, 
 		String resourceId
