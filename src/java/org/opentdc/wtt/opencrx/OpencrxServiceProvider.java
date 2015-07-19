@@ -147,7 +147,11 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 		resourceRef.setModifiedAt(resourceAssignment.getModifiedAt());
 		resourceRef.setModifiedBy(resourceAssignment.getModifiedBy().get(0));
 		resourceRef.setId(resourceAssignment.refGetPath().getLastSegment().toClassicRepresentation());
-		resourceRef.setResourceName(resourceAssignment.getName());
+		resourceRef.setResourceName(
+			resourceAssignment.getResource() == null 
+				? "" 
+				: resourceAssignment.getResource().getName()
+		);
 		resourceRef.setResourceId(
 			resourceAssignment.getResource() == null 
 				? "UNDEF"
