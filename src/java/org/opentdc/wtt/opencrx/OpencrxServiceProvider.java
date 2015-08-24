@@ -34,6 +34,7 @@ import javax.jdo.JDOHelper;
 import javax.jdo.PersistenceManager;
 import javax.naming.NamingException;
 import javax.servlet.ServletContext;
+import javax.servlet.http.HttpServletRequest;
 
 import org.opencrx.kernel.account1.jmi1.LegalEntity;
 import org.opencrx.kernel.activity1.cci2.AccountAssignmentActivityGroupQuery;
@@ -191,6 +192,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public CompanyModel createCompany(
+		HttpServletRequest request,
 		CompanyModel company
 	)  throws DuplicateException, ValidationException {
 		PersistenceManager pm = this.getPersistenceManager();
@@ -256,6 +258,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public CompanyModel updateCompany(
+		HttpServletRequest request,
 		String id,
 		CompanyModel company
 	) throws NotFoundException, ValidationException {
@@ -410,6 +413,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public ProjectModel createProject(
+		HttpServletRequest request,
 		String compId, 
 		ProjectModel project
 	) throws DuplicateException, ValidationException {
@@ -482,6 +486,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public ProjectModel updateProject(
+		HttpServletRequest request,
 		String compId,
 		String projId,
 		ProjectModel p
@@ -581,6 +586,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public ProjectModel createSubproject(
+		HttpServletRequest request,
 		String compId, 
 		String projId,
 		ProjectModel project
@@ -662,6 +668,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public ProjectModel updateSubproject(
+		HttpServletRequest request,
 		String compId, 
 		String projId,
 		String subprojId, 
@@ -764,6 +771,7 @@ public class OpencrxServiceProvider extends AbstractOpencrxServiceProvider imple
 	 */
 	@Override
 	public ResourceRefModel addResourceRef(
+		HttpServletRequest request,
 		String compId,
 		String projId, 
 		ResourceRefModel resourceRef
